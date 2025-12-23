@@ -16,25 +16,25 @@ class ReliableWiFi {
 public:
   // Constructor
   ReliableWiFi(uint8_t ledPin = LED_BUILTIN);
-  
+
   // Add a network to the list
   bool addNetwork(const char* ssid, const char* password);
-  
+
   // Initialize and connect to the strongest available network
   bool begin();
-  
+
   // Check connection and reconnect if necessary
   void maintain();
-  
+
   // Force a reconnection (useful for switching networks)
   bool reconnect();
-  
+
   // Check if WiFi is connected
   bool isConnected();
-  
+
   // Get current SSID
   String getCurrentSSID();
-  
+
   // Configuration
   void setConnectTimeout(uint32_t timeout) { connectTimeout = timeout; }
   void setReconnectBackoff(uint32_t backoff) { reconnectBackoff = backoff; }
@@ -51,27 +51,27 @@ private:
   WifiCredentials networks[MAX_NETWORKS];
   uint8_t networkCount;
   int currentNetworkIndex;
-  
+
   // LED pin
   uint8_t ledPin;
   bool useLED;
-  
+
   // Timing
   uint32_t lastConnectAttempt;
   uint32_t lastSuccessfulConnect;
   uint32_t connectTimeout;
   uint32_t reconnectBackoff;
   uint32_t refreshInterval;
-  
+
   // Internet connectivity check
   bool checkInternet;
   const char* internetCheckHost;
   uint16_t internetCheckPort;
   uint32_t internetCheckTimeout;
-  
+
   // Scanning
   bool useAggressiveScan;
-  
+
   // Internal methods
   int findStrongestNetwork();
   bool connectToNetwork(int networkIndex);
