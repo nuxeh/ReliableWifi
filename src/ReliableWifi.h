@@ -12,6 +12,17 @@ struct WifiCredentials {
   char password[MAX_PASSWORD_LEN + 1];
 };
 
+enum WifiState {
+  WIFI_STATE_IDLE,
+  WIFI_STATE_SCANNING,
+  WIFI_STATE_SCAN_COMPLETE,
+  WIFI_STATE_CONNECTING,
+  WIFI_STATE_CONNECTED,
+  WIFI_STATE_DISCONNECTED,
+  WIFI_STATE_CHECKING_INTERNET,
+  WIFI_STATE_INTERNET_CHECK_FAILED
+};
+
 class ReliableWiFi {
 public:
   // Constructor
@@ -23,7 +34,7 @@ public:
   // Initialize and connect to the strongest available network
   bool begin();
 
-  // Check connection and reconnect if necessary
+  // Check connection and reconnect if necessary (MUST be called in loop!)
   void maintain();
 
   // Force a reconnection (useful for switching networks)
@@ -34,6 +45,9 @@ public:
 
   // Get current SSID
   String getCurrentSSID();
+
+  // Get current state
+  WifiState getState() { return currentState; }
 
   // Configuration
   void setConnectTimeout(uint32_t timeout) { connectTimeout = timeout; }
@@ -47,21 +61,24 @@ public:
   void setLEDEnabled(bool enabled) { useLED = enabled; }
 
 private:
-  // LED pin
-  uint8_t ledPin;
-  bool useLED;
-
   // Network management
   WifiCredentials networks[MAX_NETWORKS];
   uint8_t networkCount;
   int currentNetworkIndex;
+  int targetNetworkIndex;
+
+  // LED pin
+  uint8_t ledPin;
+  bool useLED;
 
   // Timing
   uint32_t lastConnectAttempt;
   uint32_t lastSuccessfulConnect;
+  uint32_t connectStartTime;
   uint32_t connectTimeout;
   uint32_t reconnectBackoff;
   uint32_t refreshInterval;
+  uint32_t lastInternetCheck;
 
   // Internet connectivity check
   bool checkInternet;
@@ -71,13 +88,21 @@ private:
 
   // Scanning
   bool useAggressiveScan;
+  bool scanInProgress;
+
+  // State machine
+  WifiState currentState;
 
   // Internal methods
-  int findStrongestNetwork();
-  bool connectToNetwork(int networkIndex);
+  void startScan();
+  int processScanResults();
+  void startConnection(int networkIndex);
+  void handleConnecting();
+  void handleInternetCheck();
   bool hasInternetConnectivity();
   void flash(int count);
   void setLED(bool state);
+  void setState(WifiState newState);
 };
 
 #endif // RELIABLE_WIFI_H

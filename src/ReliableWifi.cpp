@@ -4,17 +4,22 @@ ReliableWiFi::ReliableWiFi(uint8_t ledPin)
   : ledPin(ledPin),
     networkCount(0),
     currentNetworkIndex(-1),
+    targetNetworkIndex(-1),
     useLED(true),
     lastConnectAttempt(0),
     lastSuccessfulConnect(0),
+    connectStartTime(0),
     connectTimeout(15000),
     reconnectBackoff(30000),
     refreshInterval(3600000),
+    lastInternetCheck(0),
     checkInternet(true),
     internetCheckHost("8.8.8.8"),
     internetCheckPort(53),
     internetCheckTimeout(5000),
-    useAggressiveScan(false) {
+    useAggressiveScan(false),
+    scanInProgress(false),
+    currentState(WIFI_STATE_IDLE) {
   pinMode(ledPin, OUTPUT);
   setLED(false);
 }
@@ -36,40 +41,82 @@ bool ReliableWiFi::addNetwork(const char* ssid, const char* password) {
   networks[networkCount].password[MAX_PASSWORD_LEN] = '\0';
   networkCount++;
 
-  Serial.printf("Added network: %s (total: %d)\r\n", ssid, networkCount);
+  Serial.printf("Added network: %s (total: %d)\n", ssid, networkCount);
   return true;
 }
 
-int ReliableWiFi::findStrongestNetwork() {
+void ReliableWiFi::setState(WifiState newState) {
+  if (currentState != newState) {
+    currentState = newState;
+
+    // Visual feedback for state changes
+    switch(newState) {
+      case WIFI_STATE_SCANNING:
+        if (useLED) analogWrite(ledPin, 127);
+        break;
+      case WIFI_STATE_CONNECTING:
+        // LED will blink in handleConnecting()
+        break;
+      case WIFI_STATE_CONNECTED:
+        if (useLED) setLED(true);
+        break;
+      case WIFI_STATE_DISCONNECTED:
+        if (useLED) setLED(false);
+        break;
+      default:
+        break;
+    }
+  }
+}
+
+void ReliableWiFi::startScan() {
   if (networkCount == 0) {
     Serial.println("Error: No networks configured");
+    return;
+  }
+
+  if (scanInProgress) {
+    return; // Already scanning
+  }
+
+  Serial.println("\nStarting async WiFi scan...");
+  setState(WIFI_STATE_SCANNING);
+
+#ifdef ESP32
+  // ESP32 async scan
+  if (useAggressiveScan) {
+    WiFi.scanNetworks(true, false, false, 300); // async=true
+  } else {
+    WiFi.scanNetworks(true); // async=true
+  }
+#else
+  // ESP8266 async scan
+  WiFi.scanNetworks(true); // async=true
+#endif
+
+  scanInProgress = true;
+}
+
+int ReliableWiFi::processScanResults() {
+  int numScannedNetworks = WiFi.scanComplete();
+
+  if (numScannedNetworks == WIFI_SCAN_RUNNING) {
+    return -2; // Still scanning
+  }
+
+  if (numScannedNetworks == WIFI_SCAN_FAILED) {
+    Serial.println("WiFi scan failed");
+    scanInProgress = false;
+    WiFi.scanDelete();
     return -1;
   }
 
-  if (useLED) analogWrite(ledPin, 127);
-
-  Serial.println("\r\nScanning for WiFi networks...");
-
-  int numScannedNetworks;
-  ESP.wdtDisable();
-
-#ifdef ESP32
-  // ESP32 supports more scan parameters
-  if (useAggressiveScan) {
-    numScannedNetworks = WiFi.scanNetworks(false, false, false, 300);
-  } else {
-    numScannedNetworks = WiFi.scanNetworks();
-  }
-#else
-  // ESP8266 only supports basic scanning
-  numScannedNetworks = WiFi.scanNetworks();
-#endif
-
-  ESP.wdtEnable();
-  Serial.printf("Scan complete. Found %d networks:\r\n", numScannedNetworks);
+  // Scan complete
+  Serial.printf("Scan complete. Found %d networks:\n", numScannedNetworks);
+  scanInProgress = false;
 
   if (numScannedNetworks == 0) {
-    if (useLED) setLED(false);
+    WiFi.scanDelete();
     return -1;
   }
 
@@ -80,7 +127,7 @@ int ReliableWiFi::findStrongestNetwork() {
     String scannedSSID = WiFi.SSID(i);
     int scannedRSSI = WiFi.RSSI(i);
 
-    Serial.printf("  %s (RSSI: %d)\r\n", scannedSSID.c_str(), scannedRSSI);
+    Serial.printf("  %s (RSSI: %d)\n", scannedSSID.c_str(), scannedRSSI);
 
     for (int j = 0; j < networkCount; j++) {
       if (strcmp(scannedSSID.c_str(), networks[j].ssid) == 0) {
@@ -93,8 +140,10 @@ int ReliableWiFi::findStrongestNetwork() {
     }
   }
 
+  WiFi.scanDelete(); // Free memory
+
   if (bestNetworkIndex != -1) {
-    Serial.printf("Best network: %s (RSSI: %d)\r\n",
+    Serial.printf("Best network: %s (RSSI: %d)\n",
                   networks[bestNetworkIndex].ssid, bestRSSI);
   } else {
     Serial.println("No configured networks found in scan");
@@ -102,32 +151,119 @@ int ReliableWiFi::findStrongestNetwork() {
 
   if (useLED) {
     analogWrite(ledPin, 40);
-    delay(500);
+    delay(100);
     pinMode(ledPin, OUTPUT);
     setLED(false);
   }
 
+  setState(WIFI_STATE_SCAN_COMPLETE);
   return bestNetworkIndex;
+}
+
+void ReliableWiFi::startConnection(int networkIndex) {
+  if (networkIndex < 0 || networkIndex >= networkCount) {
+    Serial.println("Error: Invalid network index");
+    setState(WIFI_STATE_DISCONNECTED);
+    return;
+  }
+
+#ifdef ESP8266
+  char* ssid = networks[networkIndex].ssid;
+  char* password = networks[networkIndex].password;
+#else
+  const char* ssid = networks[networkIndex].ssid;
+  const char* password = networks[networkIndex].password;
+#endif
+
+  targetNetworkIndex = networkIndex;
+  lastConnectAttempt = millis();
+  connectStartTime = millis();
+
+  Serial.printf("Connecting to: %s\n", ssid);
+  WiFi.begin(ssid, password);
+
+#ifdef ESP32
+  // Optional: Set TX power on ESP32 if needed
+  // WiFi.setTxPower(WIFI_POWER_19_5dBm);
+#endif
+
+  setState(WIFI_STATE_CONNECTING);
+}
+
+void ReliableWiFi::handleConnecting() {
+  // Blink LED while connecting
+  static uint32_t lastBlink = 0;
+  if (useLED && millis() - lastBlink > 500) {
+    setLED(!digitalRead(ledPin));
+    lastBlink = millis();
+  }
+
+  // Feed the watchdog
+  yield();
+
+  if (WiFi.status() == WL_CONNECTED) {
+    if (useLED) setLED(true);
+    Serial.println("WiFi connected!");
+
+#ifdef ESP8266
+    Serial.printf("  SSID: %s\n", WiFi.SSID());
+#else
+    Serial.printf("  SSID: %s\n", WiFi.SSID().c_str());
+#endif
+
+    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
+
+    flash(5);
+    lastSuccessfulConnect = millis();
+    currentNetworkIndex = targetNetworkIndex;
+
+    if (checkInternet) {
+      setState(WIFI_STATE_CHECKING_INTERNET);
+    } else {
+      setState(WIFI_STATE_CONNECTED);
+    }
+  } else if (millis() - connectStartTime > connectTimeout) {
+    // Connection timeout
+    if (useLED) setLED(false);
+    Serial.printf("Failed to connect to %s (timeout)\n", networks[targetNetworkIndex].ssid);
+    flash(3);
+    WiFi.disconnect();
+    setState(WIFI_STATE_DISCONNECTED);
+  }
+}
+
+void ReliableWiFi::handleInternetCheck() {
+  if (hasInternetConnectivity()) {
+    setState(WIFI_STATE_CONNECTED);
+    lastInternetCheck = millis();
+  } else {
+    Serial.println("WiFi connected but no internet access");
+    WiFi.disconnect();
+    if (useLED) setLED(false);
+    setState(WIFI_STATE_INTERNET_CHECK_FAILED);
+  }
 }
 
 bool ReliableWiFi::hasInternetConnectivity() {
   if (!checkInternet) {
-    return true; // Assume connected if check is disabled
+    return true;
   }
 
-  Serial.printf("Checking internet connectivity (%s:%d)...\r\n",
+  Serial.printf("Checking internet connectivity (%s:%d)...\n",
                 internetCheckHost, internetCheckPort);
 
   WiFiClient client;
 
 #ifdef ESP8266
-  // ESP8266 uses setTimeout
   client.setTimeout(internetCheckTimeout);
   bool connected = client.connect(internetCheckHost, internetCheckPort);
 #else
-  // ESP32 supports timeout parameter directly
   bool connected = client.connect(internetCheckHost, internetCheckPort, internetCheckTimeout);
 #endif
+
+  // Feed watchdog during check
+  yield();
 
   if (connected) {
     Serial.println("Internet connectivity: OK");
@@ -136,78 +272,6 @@ bool ReliableWiFi::hasInternetConnectivity() {
   } else {
     Serial.println("Internet connectivity: FAILED");
     client.stop();
-    return false;
-  }
-}
-
-bool ReliableWiFi::connectToNetwork(int networkIndex) {
-  if (networkIndex < 0 || networkIndex >= networkCount) {
-    Serial.println("Error: Invalid network index");
-    return false;
-  }
-
-#ifdef ESP8266
-  // ESP8266 needs non-const char* for SSID
-  char* ssid = networks[networkIndex].ssid;
-  char* password = networks[networkIndex].password;
-#else
-  // ESP32 accepts const char*
-  const char* ssid = networks[networkIndex].ssid;
-  const char* password = networks[networkIndex].password;
-#endif
-
-  lastConnectAttempt = millis();
-
-  Serial.printf("Connecting to: %s\r\n", ssid);
-  WiFi.begin(ssid, password);
-
-#ifdef ESP32
-  // Optional: Set TX power on ESP32 if needed
-  // WiFi.setTxPower(WIFI_POWER_19_5dBm);
-#endif
-
-  int attempts = 0;
-  int maxAttempts = connectTimeout / 500;
-
-  while (WiFi.status() != WL_CONNECTED && attempts < maxAttempts) {
-    if (useLED) setLED(!digitalRead(ledPin));
-    delay(500);
-    Serial.print(".");
-    attempts++;
-  }
-  Serial.println();
-
-  if (WiFi.status() == WL_CONNECTED) {
-    if (useLED) setLED(true);
-    Serial.println("WiFi connected!");
-
-#ifdef ESP8266
-    // ESP8266 WiFi.SSID() returns char*
-    Serial.printf("  SSID: %s\r\n", WiFi.SSID());
-#else
-    // ESP32 WiFi.SSID() returns String
-    Serial.printf("  SSID: %s\r\n", WiFi.SSID().c_str());
-#endif
-
-    Serial.printf("  IP: %s\r\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  RSSI: %d dBm\r\n", WiFi.RSSI());
-
-    // Check internet connectivity
-    if (checkInternet && !hasInternetConnectivity()) {
-      Serial.println("WiFi connected but no internet access");
-      WiFi.disconnect();
-      if (useLED) setLED(false);
-      return false;
-    }
-
-    flash(5);
-    lastSuccessfulConnect = millis();
-    currentNetworkIndex = networkIndex;
-    return true;
-  } else {
-    if (useLED) setLED(false);
-    Serial.printf("Failed to connect to %s\r\n", ssid);
-    flash(3);
     return false;
   }
 }
@@ -226,89 +290,108 @@ bool ReliableWiFi::begin() {
   Serial.println("Platform: ESP8266");
 #endif
 
-  // Try to connect to the strongest available network
-  int networkIndex = findStrongestNetwork();
-
-  if (networkIndex == -1) {
-    Serial.println("No configured networks found");
-    return false;
-  }
-
-  return connectToNetwork(networkIndex);
+  startScan();
+  return true; // Async operation started
 }
 
 bool ReliableWiFi::reconnect() {
   Serial.println("ReliableWiFi: Forcing reconnection...");
   WiFi.disconnect();
   delay(100);
+  setState(WIFI_STATE_IDLE);
   return begin();
 }
 
 void ReliableWiFi::maintain() {
   uint32_t currentMillis = millis();
 
-  // Check if we need to attempt reconnection
-  if (currentMillis - lastConnectAttempt > reconnectBackoff) {
-    if (WiFi.status() != WL_CONNECTED) {
-      Serial.println("WiFi disconnected, attempting reconnection...");
-      flash(5);
+  // Feed the watchdog
+  yield();
 
-      // Try current network first if we have one
-      if (currentNetworkIndex >= 0) {
-        if (connectToNetwork(currentNetworkIndex)) {
-          return;
-        }
+  // State machine
+  switch (currentState) {
+    case WIFI_STATE_IDLE:
+      // Check if we should attempt connection
+      if (currentMillis - lastConnectAttempt > reconnectBackoff) {
+        startScan();
       }
+      break;
 
-      // If that fails, scan for the strongest network
-      int networkIndex = findStrongestNetwork();
-      if (networkIndex >= 0) {
-        connectToNetwork(networkIndex);
-      }
-    }
-    // Periodic refresh to potentially switch to a stronger network
-    else if (currentMillis - lastSuccessfulConnect > refreshInterval) {
-      Serial.println("Refreshing WiFi connection...");
-      flash(10);
-
-      // Check if we still have internet
-      if (checkInternet && !hasInternetConnectivity()) {
-        Serial.println("Lost internet connectivity, switching networks...");
-        WiFi.disconnect();
-        delay(100);
-
-        int networkIndex = findStrongestNetwork();
+    case WIFI_STATE_SCANNING:
+      // Check if scan is complete
+      {
+        int networkIndex = processScanResults();
         if (networkIndex >= 0) {
-          connectToNetwork(networkIndex);
+          startConnection(networkIndex);
+        } else if (networkIndex == -1) {
+          // Scan failed or no networks found
+          setState(WIFI_STATE_IDLE);
         }
-      } else {
-        // Just refresh the current connection
-        WiFi.disconnect();
-        delay(100);
-        int networkIndex = findStrongestNetwork();
-        if (networkIndex >= 0) {
-          connectToNetwork(networkIndex);
-        }
+        // -2 means still scanning, keep waiting
       }
-    }
-    // Check internet connectivity periodically even when connected
-    else if (checkInternet && (currentMillis - lastSuccessfulConnect > 60000)) {
-      if (!hasInternetConnectivity()) {
-        Serial.println("Internet connectivity lost, switching networks...");
-        WiFi.disconnect();
-        delay(100);
+      break;
 
-        int networkIndex = findStrongestNetwork();
-        if (networkIndex >= 0 && networkIndex != currentNetworkIndex) {
-          connectToNetwork(networkIndex);
+    case WIFI_STATE_CONNECTING:
+      handleConnecting();
+      break;
+
+    case WIFI_STATE_CHECKING_INTERNET:
+      handleInternetCheck();
+      break;
+
+    case WIFI_STATE_CONNECTED:
+      // Check if still connected
+      if (WiFi.status() != WL_CONNECTED) {
+        Serial.println("WiFi disconnected!");
+        setState(WIFI_STATE_DISCONNECTED);
+        flash(5);
+      }
+      // Periodic refresh
+      else if (currentMillis - lastSuccessfulConnect > refreshInterval) {
+        Serial.println("Refreshing WiFi connection...");
+        flash(10);
+        WiFi.disconnect();
+        delay(100);
+        setState(WIFI_STATE_IDLE);
+      }
+      // Periodic internet check
+      else if (checkInternet && (currentMillis - lastInternetCheck > 60000)) {
+        if (!hasInternetConnectivity()) {
+          Serial.println("Internet connectivity lost, switching networks...");
+          WiFi.disconnect();
+          delay(100);
+          setState(WIFI_STATE_IDLE);
+        } else {
+          lastInternetCheck = currentMillis;
         }
       }
-    }
+      break;
+
+    case WIFI_STATE_DISCONNECTED:
+    case WIFI_STATE_INTERNET_CHECK_FAILED:
+      // Wait for backoff period before trying again
+      if (currentMillis - lastConnectAttempt > reconnectBackoff) {
+        Serial.println("Attempting reconnection after backoff...");
+
+        // Try current network first if we have one
+        if (currentNetworkIndex >= 0 && currentState == WIFI_STATE_DISCONNECTED) {
+          startConnection(currentNetworkIndex);
+        } else {
+          // Scan for best network
+          startScan();
+        }
+      }
+      break;
+
+    case WIFI_STATE_SCAN_COMPLETE:
+      // Transition state, should move to connecting quickly
+      setState(WIFI_STATE_IDLE);
+      break;
   }
 }
 
 bool ReliableWiFi::isConnected() {
-  return WiFi.status() == WL_CONNECTED;
+  return currentState == WIFI_STATE_CONNECTED && WiFi.status() == WL_CONNECTED;
 }
 
 String ReliableWiFi::getCurrentSSID() {
@@ -331,6 +414,7 @@ void ReliableWiFi::flash(int count) {
     delay(100);
     digitalWrite(ledPin, LOW);
     delay(100);
+    yield(); // Feed watchdog
   }
   digitalWrite(ledPin, oldState);
 }
