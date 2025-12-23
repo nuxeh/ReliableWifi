@@ -85,13 +85,13 @@ void ReliableWiFi::startScan() {
 #ifdef ESP32
   // ESP32 async scan
   if (useAggressiveScan) {
-    WiFi.scanNetworks(true, false, false, 300); // async=true
+    WiFi.scanNetworks(true, false, false, 300);
   } else {
-    WiFi.scanNetworks(true); // async=true
+    WiFi.scanNetworks(true);
   }
 #else
   // ESP8266 async scan
-  WiFi.scanNetworks(true); // async=true
+  WiFi.scanNetworks(true, false);
 #endif
 
   scanInProgress = true;

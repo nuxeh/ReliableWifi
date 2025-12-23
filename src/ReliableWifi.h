@@ -1,7 +1,11 @@
 #ifndef RELIABLE_WIFI_H
 #define RELIABLE_WIFI_H
 
-#include <WiFi.h>
+#ifdef ESP32
+  #include <WiFi.h>
+#else
+  #include <ESP8266WiFi.h>
+#endif
 
 #define MAX_SSID_LEN 32
 #define MAX_PASSWORD_LEN 64
