@@ -1,10 +1,10 @@
-#include "ReliableWifi.h"
+#include "ReliableWiFi.h"
 
 ReliableWiFi::ReliableWiFi(uint8_t ledPin) 
   : ledPin(ledPin),
-    useLED(true),
     networkCount(0),
     currentNetworkIndex(-1),
+    useLED(true),
     lastConnectAttempt(0),
     lastSuccessfulConnect(0),
     connectTimeout(15000),
@@ -50,12 +50,8 @@ int ReliableWiFi::findStrongestNetwork() {
   
   Serial.println("\nScanning for WiFi networks...");
   
-  int numScannedNetworks;
-  if (useAggressiveScan) {
-    numScannedNetworks = WiFi.scanNetworks(false, false, 10000, 0, true);
-  } else {
-    numScannedNetworks = WiFi.scanNetworks();
-  }
+  // ESP8266 scanNetworks only takes 0 or 2 arguments
+  int numScannedNetworks = WiFi.scanNetworks();
   
   Serial.printf("Scan complete. Found %d networks:\n", numScannedNetworks);
   
@@ -110,14 +106,16 @@ bool ReliableWiFi::hasInternetConnectivity() {
                 internetCheckHost, internetCheckPort);
   
   WiFiClient client;
-  bool connected = client.connect(internetCheckHost, internetCheckPort, internetCheckTimeout);
-  client.stop();
+  client.setTimeout(internetCheckTimeout);
+  bool connected = client.connect(internetCheckHost, internetCheckPort);
   
   if (connected) {
     Serial.println("Internet connectivity: OK");
+    client.stop();
     return true;
   } else {
     Serial.println("Internet connectivity: FAILED");
+    client.stop();
     return false;
   }
 }
@@ -128,8 +126,8 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
     return false;
   }
   
-  const char* ssid = networks[networkIndex].ssid;
-  const char* password = networks[networkIndex].password;
+  char* ssid = networks[networkIndex].ssid;
+  char* password = networks[networkIndex].password;
   
   lastConnectAttempt = millis();
   
@@ -150,7 +148,7 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
   if (WiFi.status() == WL_CONNECTED) {
     if (useLED) setLED(true);
     Serial.println("WiFi connected!");
-    Serial.printf("  SSID: %s\n", WiFi.SSID().c_str());
+    Serial.printf("  SSID: %s\n", WiFi.SSID());
     Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
     
@@ -269,7 +267,7 @@ bool ReliableWiFi::isConnected() {
 
 String ReliableWiFi::getCurrentSSID() {
   if (isConnected()) {
-    return WiFi.SSID();
+    return String(WiFi.SSID());
   }
   return "";
 }
