@@ -79,7 +79,7 @@ void ReliableWiFi::startScan() {
     return; // Already scanning
   }
 
-  Serial.println("\r\nStarting async WiFi scan...");
+  Serial.println("Starting async WiFi scan...");
   setState(WIFI_STATE_SCANNING);
 
 #ifdef ESP32
