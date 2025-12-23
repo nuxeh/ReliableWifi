@@ -1,4 +1,4 @@
-#include "ReliableWiFi.h"
+#include "ReliableWifi.h"
 
 ReliableWiFi::ReliableWiFi(uint8_t ledPin)
   : ledPin(ledPin),
