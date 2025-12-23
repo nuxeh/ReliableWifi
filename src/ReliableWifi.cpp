@@ -50,8 +50,19 @@ int ReliableWiFi::findStrongestNetwork() {
 
   Serial.println("\nScanning for WiFi networks...");
 
-  // ESP8266 scanNetworks only takes 0 or 2 arguments
-  int numScannedNetworks = WiFi.scanNetworks();
+  int numScannedNetworks;
+
+#ifdef ESP32
+  // ESP32 supports more scan parameters
+  if (useAggressiveScan) {
+    numScannedNetworks = WiFi.scanNetworks(false, false, false, 300);
+  } else {
+    numScannedNetworks = WiFi.scanNetworks();
+  }
+#else
+  // ESP8266 only supports basic scanning
+  numScannedNetworks = WiFi.scanNetworks();
+#endif
 
   Serial.printf("Scan complete. Found %d networks:\n", numScannedNetworks);
 
@@ -106,8 +117,15 @@ bool ReliableWiFi::hasInternetConnectivity() {
                 internetCheckHost, internetCheckPort);
 
   WiFiClient client;
+
+#ifdef ESP8266
+  // ESP8266 uses setTimeout
   client.setTimeout(internetCheckTimeout);
   bool connected = client.connect(internetCheckHost, internetCheckPort);
+#else
+  // ESP32 supports timeout parameter directly
+  bool connected = client.connect(internetCheckHost, internetCheckPort, internetCheckTimeout);
+#endif
 
   if (connected) {
     Serial.println("Internet connectivity: OK");
@@ -126,13 +144,25 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
     return false;
   }
 
+#ifdef ESP8266
+  // ESP8266 needs non-const char* for SSID
   char* ssid = networks[networkIndex].ssid;
   char* password = networks[networkIndex].password;
+#else
+  // ESP32 accepts const char*
+  const char* ssid = networks[networkIndex].ssid;
+  const char* password = networks[networkIndex].password;
+#endif
 
   lastConnectAttempt = millis();
 
   Serial.printf("Connecting to: %s\n", ssid);
   WiFi.begin(ssid, password);
+
+#ifdef ESP32
+  // Optional: Set TX power on ESP32 if needed
+  // WiFi.setTxPower(WIFI_POWER_19_5dBm);
+#endif
 
   int attempts = 0;
   int maxAttempts = connectTimeout / 500;
@@ -148,7 +178,15 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
   if (WiFi.status() == WL_CONNECTED) {
     if (useLED) setLED(true);
     Serial.println("WiFi connected!");
+
+#ifdef ESP8266
+    // ESP8266 WiFi.SSID() returns char*
     Serial.printf("  SSID: %s\n", WiFi.SSID());
+#else
+    // ESP32 WiFi.SSID() returns String
+    Serial.printf("  SSID: %s\n", WiFi.SSID().c_str());
+#endif
+
     Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
     Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
 
@@ -179,6 +217,12 @@ bool ReliableWiFi::begin() {
   }
 
   Serial.println("ReliableWiFi: Starting...");
+
+#ifdef ESP32
+  Serial.println("Platform: ESP32");
+#else
+  Serial.println("Platform: ESP8266");
+#endif
 
   // Try to connect to the strongest available network
   int networkIndex = findStrongestNetwork();
@@ -267,7 +311,11 @@ bool ReliableWiFi::isConnected() {
 
 String ReliableWiFi::getCurrentSSID() {
   if (isConnected()) {
+#ifdef ESP8266
     return String(WiFi.SSID());
+#else
+    return WiFi.SSID();
+#endif
   }
   return "";
 }
