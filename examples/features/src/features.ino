@@ -1,5 +1,5 @@
 #include <Arduino.h>
-#include <ReliableWifi.h>
+#include "ReliableWifi.h"
 
 // Create WiFi manager instance
 ReliableWiFi wifiManager(5);
@@ -8,7 +8,7 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  Serial.println("\n=== ReliableWiFi Example ===\n");
+  Serial.println("\r\n=== ReliableWiFi Async Example ===\r\n");
   
   // Configure the WiFi manager (optional - these are the defaults)
   wifiManager.setConnectTimeout(15000);        // 15 seconds to connect
@@ -22,41 +22,73 @@ void setup() {
   wifiManager.setLEDEnabled(true);             // Enable LED feedback
   
   // Add your networks (strongest signal will be chosen automatically)
-  wifiManager.addNetwork("Yard", "PASSWORD");
-  wifiManager.addNetwork("Garage", "PASSWORD");
-  wifiManager.addNetwork("House", "PASSWORD");
+  wifiManager.addNetwork("Yard", "PASS1234");
+  wifiManager.addNetwork("Garage", "PASS1234");
+  wifiManager.addNetwork("Grain Store", "PASS1234");
   
-  // Connect to the strongest available network
-  if (wifiManager.begin()) {
-    Serial.println("\nSuccessfully connected!");
-    Serial.printf("Connected to: %s\n", wifiManager.getCurrentSSID().c_str());
-  } else {
-    Serial.println("\nFailed to connect to any network");
-  }
+  // Start async connection process (non-blocking)
+  wifiManager.begin();
+  
+  Serial.println("WiFi connection started (async)...");
+  Serial.println("maintain() will handle the connection process");
 }
 
 void loop() {
-  // Call maintain() regularly to handle reconnections and network switching
+  // IMPORTANT: Call maintain() regularly - this is required for async operation!
+  // This handles scanning, connecting, and reconnecting without blocking
   wifiManager.maintain();
   
-  // Your application code here
-  if (wifiManager.isConnected()) {
-    // Do something that requires WiFi
-    static unsigned long lastPrint = 0;
-    if (millis() - lastPrint > 10000) {
-      Serial.printf("Still connected to: %s (RSSI: %d dBm)\n", 
-                    wifiManager.getCurrentSSID().c_str(), 
-                    WiFi.RSSI());
-      lastPrint = millis();
+  // Your application code here - runs even while WiFi is connecting!
+  static unsigned long lastPrint = 0;
+  if (millis() - lastPrint > 5000) {
+    
+    // Check current state
+    switch(wifiManager.getState()) {
+      case WIFI_STATE_IDLE:
+        Serial.println("State: IDLE");
+        break;
+      case WIFI_STATE_SCANNING:
+        Serial.println("State: SCANNING (async, non-blocking)");
+        break;
+      case WIFI_STATE_CONNECTING:
+        Serial.println("State: CONNECTING...");
+        break;
+      case WIFI_STATE_CHECKING_INTERNET:
+        Serial.println("State: CHECKING INTERNET...");
+        break;
+      case WIFI_STATE_CONNECTED:
+        Serial.printf("State: CONNECTED to %s (RSSI: %d dBm)\r\n", 
+                      wifiManager.getCurrentSSID().c_str(), 
+                      WiFi.RSSI());
+        break;
+      case WIFI_STATE_DISCONNECTED:
+        Serial.println("State: DISCONNECTED (will retry after backoff)");
+        break;
+      case WIFI_STATE_INTERNET_CHECK_FAILED:
+        Serial.println("State: NO INTERNET (will try different network)");
+        break;
+      default:
+        Serial.println("State: UNKNOWN");
+        break;
     }
-  } else {
-    Serial.println("WiFi not connected, waiting for reconnection...");
+    
+    lastPrint = millis();
   }
   
+  // Example: Do work that requires WiFi
+  if (wifiManager.isConnected()) {
+    // Your WiFi-dependent code here
+    // For example: MQTT, HTTP requests, etc.
+  }
+  
+  // Example: Other tasks that don't require WiFi
+  // Sensor reading, local processing, etc.
+  
+  // Small delay to prevent tight loop (optional)
   delay(100);
 }
 
-// Example: Force reconnection on demand
+// Example: Force reconnection on demand (e.g., from a button press)
 void forceReconnect() {
   Serial.println("Forcing WiFi reconnection...");
   wifiManager.reconnect();
