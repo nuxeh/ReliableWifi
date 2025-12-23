@@ -36,7 +36,7 @@ bool ReliableWiFi::addNetwork(const char* ssid, const char* password) {
   networks[networkCount].password[MAX_PASSWORD_LEN] = '\0';
   networkCount++;
 
-  Serial.printf("Added network: %s (total: %d)\n", ssid, networkCount);
+  Serial.printf("Added network: %s (total: %d)\r\n", ssid, networkCount);
   return true;
 }
 
@@ -48,7 +48,7 @@ int ReliableWiFi::findStrongestNetwork() {
 
   if (useLED) analogWrite(ledPin, 127);
 
-  Serial.println("\nScanning for WiFi networks...");
+  Serial.println("\r\nScanning for WiFi networks...");
 
   int numScannedNetworks;
 
@@ -64,7 +64,7 @@ int ReliableWiFi::findStrongestNetwork() {
   numScannedNetworks = WiFi.scanNetworks();
 #endif
 
-  Serial.printf("Scan complete. Found %d networks:\n", numScannedNetworks);
+  Serial.printf("Scan complete. Found %d networks:\r\n", numScannedNetworks);
 
   if (numScannedNetworks == 0) {
     if (useLED) setLED(false);
@@ -78,7 +78,7 @@ int ReliableWiFi::findStrongestNetwork() {
     String scannedSSID = WiFi.SSID(i);
     int scannedRSSI = WiFi.RSSI(i);
 
-    Serial.printf("  %s (RSSI: %d)\n", scannedSSID.c_str(), scannedRSSI);
+    Serial.printf("  %s (RSSI: %d)\r\n", scannedSSID.c_str(), scannedRSSI);
 
     for (int j = 0; j < networkCount; j++) {
       if (strcmp(scannedSSID.c_str(), networks[j].ssid) == 0) {
@@ -92,7 +92,7 @@ int ReliableWiFi::findStrongestNetwork() {
   }
 
   if (bestNetworkIndex != -1) {
-    Serial.printf("Best network: %s (RSSI: %d)\n",
+    Serial.printf("Best network: %s (RSSI: %d)\r\n",
                   networks[bestNetworkIndex].ssid, bestRSSI);
   } else {
     Serial.println("No configured networks found in scan");
@@ -113,7 +113,7 @@ bool ReliableWiFi::hasInternetConnectivity() {
     return true; // Assume connected if check is disabled
   }
 
-  Serial.printf("Checking internet connectivity (%s:%d)...\n",
+  Serial.printf("Checking internet connectivity (%s:%d)...\r\n",
                 internetCheckHost, internetCheckPort);
 
   WiFiClient client;
@@ -156,7 +156,7 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
 
   lastConnectAttempt = millis();
 
-  Serial.printf("Connecting to: %s\n", ssid);
+  Serial.printf("Connecting to: %s\r\n", ssid);
   WiFi.begin(ssid, password);
 
 #ifdef ESP32
@@ -181,14 +181,14 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
 
 #ifdef ESP8266
     // ESP8266 WiFi.SSID() returns char*
-    Serial.printf("  SSID: %s\n", WiFi.SSID());
+    Serial.printf("  SSID: %s\r\n", WiFi.SSID());
 #else
     // ESP32 WiFi.SSID() returns String
-    Serial.printf("  SSID: %s\n", WiFi.SSID().c_str());
+    Serial.printf("  SSID: %s\r\n", WiFi.SSID().c_str());
 #endif
 
-    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
+    Serial.printf("  IP: %s\r\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  RSSI: %d dBm\r\n", WiFi.RSSI());
 
     // Check internet connectivity
     if (checkInternet && !hasInternetConnectivity()) {
@@ -204,7 +204,7 @@ bool ReliableWiFi::connectToNetwork(int networkIndex) {
     return true;
   } else {
     if (useLED) setLED(false);
-    Serial.printf("Failed to connect to %s\n", ssid);
+    Serial.printf("Failed to connect to %s\r\n", ssid);
     flash(3);
     return false;
   }
