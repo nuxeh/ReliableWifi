@@ -41,7 +41,7 @@ bool ReliableWiFi::addNetwork(const char* ssid, const char* password) {
   networks[networkCount].password[MAX_PASSWORD_LEN] = '\0';
   networkCount++;
 
-  Serial.printf("Added network: %s (total: %d)\n", ssid, networkCount);
+  Serial.printf("Added network: %s (total: %d)\r\n", ssid, networkCount);
   return true;
 }
 
@@ -79,7 +79,7 @@ void ReliableWiFi::startScan() {
     return; // Already scanning
   }
 
-  Serial.println("\nStarting async WiFi scan...");
+  Serial.println("\r\nStarting async WiFi scan...");
   setState(WIFI_STATE_SCANNING);
 
 #ifdef ESP32
@@ -112,7 +112,7 @@ int ReliableWiFi::processScanResults() {
   }
 
   // Scan complete
-  Serial.printf("Scan complete. Found %d networks:\n", numScannedNetworks);
+  Serial.printf("Scan complete. Found %d networks:\r\n", numScannedNetworks);
   scanInProgress = false;
 
   if (numScannedNetworks == 0) {
@@ -127,7 +127,7 @@ int ReliableWiFi::processScanResults() {
     String scannedSSID = WiFi.SSID(i);
     int scannedRSSI = WiFi.RSSI(i);
 
-    Serial.printf("  %s (RSSI: %d)\n", scannedSSID.c_str(), scannedRSSI);
+    Serial.printf("  %s (RSSI: %d)\r\n", scannedSSID.c_str(), scannedRSSI);
 
     for (int j = 0; j < networkCount; j++) {
       if (strcmp(scannedSSID.c_str(), networks[j].ssid) == 0) {
@@ -143,7 +143,7 @@ int ReliableWiFi::processScanResults() {
   WiFi.scanDelete(); // Free memory
 
   if (bestNetworkIndex != -1) {
-    Serial.printf("Best network: %s (RSSI: %d)\n",
+    Serial.printf("Best network: %s (RSSI: %d)\r\n",
                   networks[bestNetworkIndex].ssid, bestRSSI);
   } else {
     Serial.println("No configured networks found in scan");
@@ -179,7 +179,7 @@ void ReliableWiFi::startConnection(int networkIndex) {
   lastConnectAttempt = millis();
   connectStartTime = millis();
 
-  Serial.printf("Connecting to: %s\n", ssid);
+  Serial.printf("Connecting to: %s\r\n", ssid);
   WiFi.begin(ssid, password);
 
 #ifdef ESP32
@@ -205,14 +205,10 @@ void ReliableWiFi::handleConnecting() {
     if (useLED) setLED(true);
     Serial.println("WiFi connected!");
 
-#ifdef ESP8266
-    Serial.printf("  SSID: %s\n", WiFi.SSID());
-#else
-    Serial.printf("  SSID: %s\n", WiFi.SSID().c_str());
-#endif
+    Serial.printf("  SSID: %s\r\n", WiFi.SSID().c_str());
 
-    Serial.printf("  IP: %s\n", WiFi.localIP().toString().c_str());
-    Serial.printf("  RSSI: %d dBm\n", WiFi.RSSI());
+    Serial.printf("  IP: %s\r\n", WiFi.localIP().toString().c_str());
+    Serial.printf("  RSSI: %d dBm\r\n", WiFi.RSSI());
 
     flash(5);
     lastSuccessfulConnect = millis();
@@ -226,7 +222,7 @@ void ReliableWiFi::handleConnecting() {
   } else if (millis() - connectStartTime > connectTimeout) {
     // Connection timeout
     if (useLED) setLED(false);
-    Serial.printf("Failed to connect to %s (timeout)\n", networks[targetNetworkIndex].ssid);
+    Serial.printf("Failed to connect to %s (timeout)\r\n", networks[targetNetworkIndex].ssid);
     flash(3);
     WiFi.disconnect();
     setState(WIFI_STATE_DISCONNECTED);
@@ -250,7 +246,7 @@ bool ReliableWiFi::hasInternetConnectivity() {
     return true;
   }
 
-  Serial.printf("Checking internet connectivity (%s:%d)...\n",
+  Serial.printf("Checking internet connectivity (%s:%d)...\r\n",
                 internetCheckHost, internetCheckPort);
 
   WiFiClient client;
