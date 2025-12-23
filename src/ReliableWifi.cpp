@@ -51,7 +51,7 @@ int ReliableWiFi::findStrongestNetwork() {
   Serial.println("\r\nScanning for WiFi networks...");
 
   int numScannedNetworks;
-  ESP.wdtDisable()
+  ESP.wdtDisable();
 
 #ifdef ESP32
   // ESP32 supports more scan parameters
