@@ -47,14 +47,14 @@ public:
   void setLEDEnabled(bool enabled) { useLED = enabled; }
 
 private:
+  // LED pin
+  uint8_t ledPin;
+  bool useLED;
+
   // Network management
   WifiCredentials networks[MAX_NETWORKS];
   uint8_t networkCount;
   int currentNetworkIndex;
-
-  // LED pin
-  uint8_t ledPin;
-  bool useLED;
 
   // Timing
   uint32_t lastConnectAttempt;
