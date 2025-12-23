@@ -30,7 +30,7 @@ enum WifiState {
 class ReliableWiFi {
 public:
   // Constructor
-  ReliableWiFi(uint8_t ledPin = LED_BUILTIN);
+  ReliableWiFi(uint8_t ledPin = -1);
 
   // Add a network to the list
   bool addNetwork(const char* ssid, const char* password);

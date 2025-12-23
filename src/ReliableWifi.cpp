@@ -416,7 +416,7 @@ void ReliableWiFi::flash(int count) {
 }
 
 void ReliableWiFi::setLED(bool state) {
-  if (useLED) {
+  if (useLED && ledPin != -1) {
     digitalWrite(ledPin, state);
   }
 }
